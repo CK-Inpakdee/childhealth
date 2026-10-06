@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Child Health Monitoring System (รพ.สต.)</title>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <style>
+        :root {
+            --primary-bg: #f8f9fa;
+            --sidebar-bg: #2c3e50;
+            --sidebar-hover: #34495e;
+            --text-main: #333;
+            --green: #28a745;
+            --yellow: #ffc107;
+            --orange: #fd7e14;
+            --red: #dc3545;
+        }
+        body { font-family: 'Prompt', sans-serif; background-color: var(--primary-bg); color: var(--text-main); overflow-x: hidden; }
+        
+        /* Layout */
+        #wrapper { display: flex; height: 100vh; overflow: hidden; }
+        #sidebar { width: 250px; background-color: var(--sidebar-bg); color: white; transition: all 0.3s; flex-shrink: 0; overflow-y: auto;}
+        #content { flex-grow: 1; display: flex; flex-direction: column; overflow-y: auto; padding: 20px;}
+        
+        /* Sidebar Styling */
+        .sidebar-header { padding: 20px; font-weight: 700; font-size: 1.2rem; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .nav-link { color: rgba(255,255,255,0.8); padding: 12px 20px; cursor: pointer; transition: 0.2s;}
+        .nav-link:hover, .nav-link.active { background-color: var(--sidebar-hover); color: white; border-left: 4px solid #3498db; }
+        .nav-link i { width: 25px; }
+        
+        /* Cards & KPI */
+        .kpi-card { border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); padding: 20px; text-align: center; background: white; border: none;}
+        .kpi-value { font-size: 2rem; font-weight: 700; }
+        
+        /* Risk Badges */
+        .badge-NORMAL { background-color: var(--green); color: white; }
+        .badge-WATCH { background-color: var(--yellow); color: black; }
+        .badge-HIGH { background-color: var(--orange); color: white; }
+        .badge-OVERDUE { background-color: var(--red); color: white; }
+
+        /* Loader */
+        #loader { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); z-index: 9999; justify-content: center; align-items: center;}
+        
+        /* AI Chatbot */
+        #chatbot-container { position: fixed; bottom: 20px; right: 20px; width: 350px; background: white; border-radius: 15px; box-shadow: 0 10px 20px rgba(0,0,0,0.2); display: none; flex-direction: column; z-index: 1000; overflow: hidden; border: 1px solid #ddd;}
+        .chat-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; }
+        .chat-body { height: 300px; overflow-y: auto; padding: 15px; background: #f9f9f9;}
+        .chat-input { padding: 10px; border-top: 1px solid #eee; display: flex; }
+        .msg { margin-bottom: 10px; padding: 10px; border-radius: 10px; max-width: 80%; font-size: 0.9rem;}
+        .msg-user { background: #e3f2fd; align-self: flex-end; margin-left: auto; border-bottom-right-radius: 0;}
+        .msg-ai { background: white; border: 1px solid #eee; align-self: flex-start; margin-right: auto; border-bottom-left-radius: 0;}
+        
+        /* Markdown support for AI */
+        .ai-summary-box { background: white; border-radius: 8px; padding: 20px; border-left: 5px solid #764ba2; white-space: pre-line;}
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+<div id="loader">
+    <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
+</div>
+
+<div id="wrapper">
+    <!-- Sidebar -->
+    <nav id="sidebar">
+        <div class="sidebar-header">
+            <i class="fa-solid fa-baby"></i> Child Health System
+        </div>
+        <div class="nav flex-column mt-3">
+            <a class="nav-link active" onclick="switchView('dashboard')"><i class="fa-solid fa-chart-pie"></i> Dashboard</a>
+            <a class="nav-link" onclick="switchView('children-list')"><i class="fa-solid fa-users"></i> ทะเบียนเด็ก</a>
+            <a class="nav-link" onclick="switchView('add-child', true)"><i class="fa-solid fa-user-plus"></i> เพิ่มเด็กใหม่</a>
+            <hr class="text-white mx-3">
+            <a class="nav-link" onclick="switchView('admin-settings')"><i class="fa-solid fa-cogs"></i> ตั้งค่าระบบ / Setup</a>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div id="content">
+        <!-- Topbar -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 id="page-title" class="fw-bold m-0">Dashboard</h2>
+            <div class="user-info">
+                <span class="me-3"><i class="fa-solid fa-user-circle"></i> รพ.สต.ตัวอย่าง (Admin)</span>
+            </div>
+        </div>
+
+        <!-- Views Container -->
+        <div id="views">
+            
+            <!-- 1. Dashboard View -->
+            <div id="view-dashboard">
+                <div class="row g-3 mb-4">
+                    <div class="col-md-3"><div class="kpi-card text-primary"><div class="kpi-value" id="kpi-total">-</div><div>เด็กทั้งหมด</div></div></div>
+                    <div class="col-md-3"><div class="kpi-card text-success"><div class="kpi-value" id="kpi-active">-</div><div>เด็ก Active</div></div></div>
+                    <div class="col-md-3"><div class="kpi-card text-warning"><div class="kpi-value" id="kpi-risk">-</div><div>เด็กกลุ่มเสี่ยง</div></div></div>
+                    <div class="col-md-3"><div class="kpi-card text-danger"><div class="kpi-value" id="kpi-overdue">-</div><div>ขาดนัด (Overdue)</div></div></div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card p-3 shadow-sm border-0"><canvas id="ageChart"></canvas></div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card p-3 shadow-sm border-0">
+                            <h5>✨ AI Insights</h5>
+                            <p id="ai-insight-text" class="text-muted small">ระบบกำลังประมวลผลข้อมูลภาพรวม...</p>
+                            <button class="btn btn-sm btn-outline-primary" onclick="generateAIInsight()">วิเคราะห์ใหม่</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. Children List View -->
+            <div id="view-children-list" class="hidden">
+                <div class="card border-0 shadow-sm p-3">
+                    <div class="d-flex justify-content-between mb-3">
+                        <input type="text" id="search-child" class="form-control w-25" placeholder="ค้นหา CID, ชื่อ, หมู่บ้าน...">
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>CID</th><th>ชื่อ-สกุล</th><th>อายุ</th><th>หมู่บ้าน</th><th>สถานะ</th><th>จัดการ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-children-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. Add/Edit Child View (Master Form) -->
+            <div id="view-add-child" class="hidden">
+                <div class="card border-0 shadow-sm p-4">
+                    <form id="child-form" onsubmit="handleSaveChild(event)">
+                        <input type="hidden" id="form-ChildID">
+                        <div class="row g-3">
+                            <h5 class="text-primary border-bottom pb-2">ข้อมูลพื้นฐาน</h5>
+                            <div class="col-md-4">
+                                <label>เลขบัตรประชาชน (CID) *</label>
+                                <input type="text" class="form-control" id="form-CID" required maxlength="13" pattern="\d{13}">
+                            </div>
+                            <div class="col-md-4">
+                                <label>ชื่อ *</label>
+                                <input type="text" class="form-control" id="form-FirstName" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label>นามสกุล *</label>
+                                <input type="text" class="form-control" id="form-LastName" required>
+                            </div>
+                            <div class="col-md-3">
+                                <label>วันเกิด (DOB) *</label>
+                                <input type="date" class="form-control" id="form-DOB" required onchange="calculateFormAge()">
+                            </div>
+                            <div class="col-md-3">
+                                <label>อายุ (คำนวณอัตโนมัติ)</label>
+                                <input type="text" class="form-control bg-light" id="form-Age" readonly>
+                            </div>
+                            <div class="col-md-3">
+                                <label>เพศ</label>
+                                <select class="form-select" id="form-Gender"><option value="M">ชาย</option><option value="F">หญิง</option></select>
+                            </div>
+                            <div class="col-md-3">
+                                <label>หมู่บ้าน</label>
+                                <input type="text" class="form-control" id="form-Village">
+                            </div>
+                        </div>
+                        <div class="mt-4 text-end">
+                            <button type="submit" class="btn btn-success"><i class="fa-solid fa-save"></i> บันทึกข้อมูล</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- 4. Child 360 Profile View -->
+            <div id="view-child-profile" class="hidden">
+                <div class="card border-0 shadow-sm mb-3 p-3 bg-white">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="d-flex">
+                            <div style="width: 80px; height: 80px; background: #eee; border-radius: 50%; display:flex; align-items:center; justify-content:center; font-size: 2rem; color: #ccc;" class="me-3">
+                                <i class="fa-solid fa-child"></i>
+                            </div>
+                            <div>
+                                <h4 id="profile-name" class="fw-bold mb-1">-</h4>
+                                <p class="text-muted mb-1">CID: <span id="profile-cid">-</span> | อายุ: <span id="profile-age">-</span></p>
+                                <span class="badge badge-NORMAL" id="profile-risk">NORMAL</span>
+                            </div>
+                        </div>
+                        <div>
+                            <button class="btn btn-warning text-dark me-2" onclick="openAIChat()"><i class="fa-solid fa-robot"></i> ถาม AI</button>
+                            <button class="btn btn-primary" onclick="generateSummary()"><i class="fa-solid fa-wand-magic-sparkles"></i> AI สรุปสุขภาพ</button>
+                        </div>
+                    </div>
+                </div>
+
+                <ul class="nav nav-tabs" id="profileTabs">
+                    <li class="nav-item"><a class="nav-link active" data-tab="summary">AI Summary</a></li>
+                    <li class="nav-item"><a class="nav-link" data-tab="timeline">Timeline</a></li>
+                    <li class="nav-item"><a class="nav-link" data-tab="growth">การเจริญเติบโต</a></li>
+                    <li class="nav-item"><a class="nav-link" data-tab="vaccine">วัคซีน</a></li>
+                </ul>
+
+                <div class="card border-0 shadow-sm border-top-0 rounded-0 rounded-bottom p-3">
+                    <!-- Tab Content: AI Summary -->
+                    <div id="tab-summary" class="tab-content">
+                        <div id="ai-summary-result" class="ai-summary-box text-muted">คลิกปุ่ม "AI สรุปสุขภาพ" ด้านบนเพื่อสร้างบทสรุป</div>
+                    </div>
+                    
+                    <!-- Tab Content: Growth -->
+                    <div id="tab-growth" class="tab-content hidden">
+                        <button class="btn btn-sm btn-outline-success mb-3" onclick="alert('บันทึก Growth (Mock)')">+ เพิ่มข้อมูลชั่งน้ำหนัก</button>
+                        <table class="table table-sm">
+                            <thead><tr><th>วันที่</th><th>อายุ (เดือน)</th><th>น้ำหนัก (kg)</th><th>ส่วนสูง (cm)</th><th>ผู้บันทึก</th></tr></thead>
+                            <tbody id="profile-growth-body"></tbody>
+                        </table>
+                    </div>
+                    
+                     <!-- Add other tabs similarly -->
+                </div>
+            </div>
+
+            <!-- 5. Admin Settings -->
+            <div id="view-admin-settings" class="hidden">
+                <div class="card border-0 shadow-sm p-4">
+                    <h5><i class="fa-solid fa-cogs"></i> System Initialization & Setup</h5>
+                    <p class="text-muted">ใช้สำหรับตั้งค่าครั้งแรก หรือเมื่อมีการอัปเดตโครงสร้างฐานข้อมูล</p>
+                    <button class="btn btn-danger me-2" onclick="callApiAction('setup')">1. Setup / Update Database Sheets</button>
+                    <button class="btn btn-warning me-2" onclick="callApiAction('seedData')">2. Seed Demo Data</button>
+                    <hr>
+                    <p class="text-muted small">คำแนะนำ: ในระบบ Production จริง ต้องตั้งค่า GEMINI_API_KEY ใน GAS Script Properties ห้ามเปิดเผยในหน้านี้</p>
+                </div>
+            </div>
+
+        </div> <!-- End Views -->
+    </div> <!-- End Content -->
+
+    <!-- AI Chatbot UI -->
+    <div id="chatbot-container">
+        <div class="chat-header">
+            <span><i class="fa-solid fa-robot"></i> AI Child Assistant</span>
+            <button class="btn-close btn-close-white" style="font-size: 0.8rem;" onclick="document.getElementById('chatbot-container').style.display='none'"></button>
+        </div>
+        <div class="chat-body" id="chat-body">
+            <div class="msg msg-ai">สวัสดีค่ะ ฉันคือ AI ผู้ช่วยวิเคราะห์ข้อมูลของเด็กคนนี้ (อิงจากข้อมูลในระบบเท่านั้น) มีอะไรให้ช่วยไหมคะ?</div>
+        </div>
+        <div class="chat-input">
+            <input type="text" id="chat-input-text" class="form-control form-control-sm me-2" placeholder="ถามข้อมูลเด็กคนนี้...">
+            <button class="btn btn-sm btn-primary" onclick="sendChatMessage()"><i class="fa-solid fa-paper-plane"></i></button>
+        </div>
+    </div>
+</div>
+
+<!-- JavaScript Logic -->
+<script>
+    // ==========================================
+    // 1. STATE & CORE UTILS
+    // ==========================================
+    // ** กำหนด URL ของ Google Apps Script Web App ของคุณตามที่คุณระบุ **
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyVh0Thyn2sCgKltX1lDonK0FRY3aVK1jBAjWDRZvuNJnNSrqMbaAgyA2xu3oJjDczT/exec';
+    
+    let appState = {
+        currentChildId: null,
+        childrenList: []
+    };
+
+    function showLoader() { document.getElementById('loader').style.display = 'flex'; }
+    function hideLoader() { document.getElementById('loader').style.display = 'none'; }
+
+    // API Fetch Wrapper
+    async function apiRequest(action, data = {}) {
+        if (!SCRIPT_URL || SCRIPT_URL.includes('AKfycbycT-3zX8x')) {
+            // Mock response if URL is not set (preventing errors during view)
+            console.warn("GAS URL not set or default. Using mock if unable to fetch.");
+        }
+
+        showLoader();
+        try {
+            const response = await fetch(SCRIPT_URL, {
+                method: 'POST',
+                redirect: 'follow', // สำคัญมากสำหรับ GAS เพื่อให้ตาม Redirect 302 ได้
+                headers: { 
+                    'Content-Type': 'text/plain;charset=utf-8' // ป้องกันปัญหา CORS Preflight
+                },
+                body: JSON.stringify({ action: action, data: data, user: 'Admin' })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Network response was not ok (${response.status})`);
+            }
+
+            const result = await response.json();
+            hideLoader();
+            if (!result.success) throw new Error(result.message);
+            return result.data;
+        } catch (error) {
+            hideLoader();
+            
+            let errorMessage = error.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อ';
+            
+            // ดักจับ Error 'Failed to fetch' เพื่อแจ้งวิธีแก้ไขให้ผู้ใช้
+            if (errorMessage === 'Failed to fetch') {
+                errorMessage = "เชื่อมต่อ Web App ไม่สำเร็จ (Failed to fetch) <br><br><b>วิธีแก้ไข:</b><br>กรุณาตรวจสอบที่ Google Apps Script ว่าตอน Deploy (ทำให้ใช้งานได้) ได้ตั้งค่า <b>'ผู้ที่มีสิทธิ์เข้าถึง' (Who has access)</b> เป็น <b>'ทุกคน' (Anyone)</b> หรือไม่";
+                Swal.fire({ title: 'Error', html: errorMessage, icon: 'error' });
+            } else {
+                Swal.fire('Error', errorMessage, 'error');
+            }
+            
+            throw error;
+        }
+    }
+
+    // Age Calculation
+    function calculateAge(dobString) {
+        if(!dobString) return null;
+        let dob = new Date(dobString);
+        let now = new Date();
+        let years = now.getFullYear() - dob.getFullYear();
+        let months = now.getMonth() - dob.getMonth();
+        let days = now.getDate() - dob.getDate();
+        if (days < 0) { months--; days += new Date(now.getFullYear(), now.getMonth(), 0).getDate(); }
+        if (months < 0) { years--; months += 12; }
+        let totalMonths = (years * 12) + months;
+        return { years, months, days, totalMonths, text: `${years} ปี ${months} เดือน` };
+    }
+
+    function calculateFormAge() {
+        const dob = document.getElementById('form-DOB').value;
+        if(dob) {
+            const age = calculateAge(dob);
+            document.getElementById('form-Age').value = age.text;
+        }
+    }
+
+    // ==========================================
+    // 2. UI NAVIGATION
+    // ==========================================
+    function switchView(viewId, isNew = false) {
+        document.querySelectorAll('#views > div').forEach(div => div.classList.add('hidden'));
+        document.querySelectorAll('.nav-link').forEach(nav => nav.classList.remove('active'));
+        
+        const targetView = document.getElementById(`view-${viewId}`);
+        if(targetView) targetView.classList.remove('hidden');
+
+        const activeNavLink = document.querySelector(`.nav-link[onclick*="'${viewId}'"]`);
+        if (activeNavLink) activeNavLink.classList.add('active');
+
+        // View specific logic
+        if(viewId === 'dashboard') {
+            document.getElementById('page-title').innerText = "Dashboard";
+            loadDashboard();
+        }
+        if(viewId === 'children-list') {
+            document.getElementById('page-title').innerText = "ทะเบียนเด็ก";
+            loadChildrenList();
+        }
+        if(viewId === 'add-child') {
+            if(isNew) {
+                document.getElementById('page-title').innerText = "เพิ่มข้อมูลเด็กใหม่";
+                document.getElementById('child-form').reset();
+                document.getElementById('form-ChildID').value = "";
+                document.getElementById('form-Age').value = "";
+            } else {
+                document.getElementById('page-title').innerText = "แก้ไขข้อมูลเด็ก";
+            }
+        }
+    }
+
+    async function loadChildrenList() {
+        try {
+            const data = await apiRequest('getChildren');
+            appState.childrenList = data;
+            const tbody = document.getElementById('table-children-body');
+            tbody.innerHTML = '';
+            data.forEach(child => {
+                const age = calculateAge(child.DOB);
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${child.CID}</td>
+                        <td>${child.FirstName} ${child.LastName}</td>
+                        <td>${age ? age.text : '-'}</td>
+                        <td>${child.Village || '-'}</td>
+                        <td><span class="badge bg-success">Active</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-info text-white mb-1" onclick="viewChildProfile('${child.ChildID}')" title="ดูโปรไฟล์ 360"><i class="fa-solid fa-eye"></i></button>
+                            <button class="btn btn-sm btn-warning text-dark mb-1" onclick="editChild('${child.ChildID}')" title="แก้ไขข้อมูล"><i class="fa-solid fa-edit"></i></button>
+                            <button class="btn btn-sm btn-danger mb-1" onclick="deleteChild('${child.ChildID}')" title="ลบข้อมูล"><i class="fa-solid fa-trash"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+        } catch (e) {
+            console.warn("Could not load children list");
+        }
+    }
+
+    // --- ฟังก์ชันสำหรับแก้ไขข้อมูล (Edit) ---
+    function editChild(childId) {
+        const child = appState.childrenList.find(c => c.ChildID === childId);
+        if(!child) return;
+        
+        document.getElementById('form-ChildID').value = child.ChildID;
+        document.getElementById('form-CID').value = child.CID;
+        document.getElementById('form-FirstName').value = child.FirstName;
+        document.getElementById('form-LastName').value = child.LastName;
+        
+        // แปลงรูปแบบวันที่ให้เข้ากับ input type="date"
+        if(child.DOB) {
+            const dobDate = new Date(child.DOB);
+            const year = dobDate.getFullYear();
+            const month = String(dobDate.getMonth() + 1).padStart(2, '0');
+            const day = String(dobDate.getDate()).padStart(2, '0');
+            document.getElementById('form-DOB').value = `${year}-${month}-${day}`;
+            calculateFormAge();
+        }
+
+        document.getElementById('form-Gender').value = child.Gender || 'M';
+        document.getElementById('form-Village').value = child.Village || '';
+        
+        switchView('add-child', false);
+    }
+
+    // --- ฟังก์ชันสำหรับลบข้อมูล (Soft Delete) ---
+    async function deleteChild(childId) {
+        const result = await Swal.fire({
+            title: 'ยืนยันการลบข้อมูล?',
+            text: "ข้อมูลนี้จะถูกซ่อนจากระบบ (แต่ยังคงอยู่ในฐานข้อมูลตามหลัก Audit)",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'ใช่, ลบเลย!',
+            cancelButtonText: 'ยกเลิก'
+        });
+
+        if (result.isConfirmed) {
+            try {
+                await apiRequest('deleteChild', { childId: childId });
+                Swal.fire('ลบข้อมูลสำเร็จ!', 'ข้อมูลถูกอัปเดตสถานะเรียบร้อย', 'success');
+                loadChildrenList(); // โหลดตารางใหม่
+                loadDashboard();    // โหลด Dashboard ใหม่
+            } catch(error) {
+                console.error("Delete failed:", error);
+            }
+        }
+    }
+
+    async function handleSaveChild(e) {
+        e.preventDefault();
+        const dob = document.getElementById('form-DOB').value;
+        const ageObj = calculateAge(dob);
+        
+        const payload = {
+            ChildID: document.getElementById('form-ChildID').value,
+            CID: document.getElementById('form-CID').value,
+            FirstName: document.getElementById('form-FirstName').value,
+            LastName: document.getElementById('form-LastName').value,
+            DOB: dob,
+            AgeYear: ageObj.years,
+            AgeMonth: ageObj.months,
+            Gender: document.getElementById('form-Gender').value,
+            Village: document.getElementById('form-Village').value,
+            ActiveStatus: 'ACTIVE'
+        };
+
+        await apiRequest('saveChild', payload);
+        Swal.fire('สำเร็จ', 'บันทึกข้อมูลเด็กเรียบร้อย', 'success');
+        switchView('children-list');
+    }
+
+    async function viewChildProfile(childId) {
+        appState.currentChildId = childId;
+        const profile = await apiRequest('getChildProfile', { childId });
+        
+        const master = profile.master;
+        document.getElementById('profile-name').innerText = `${master.FirstName} ${master.LastName}`;
+        document.getElementById('profile-cid').innerText = master.CID;
+        document.getElementById('profile-age').innerText = calculateAge(master.DOB).text;
+        
+        // Render Growth Data (Example)
+        const gBody = document.getElementById('profile-growth-body');
+        gBody.innerHTML = '';
+        if(profile.growth && profile.growth.length > 0) {
+            profile.growth.forEach(g => {
+                gBody.innerHTML += `<tr><td>${new Date(g.RecordDate).toLocaleDateString()}</td><td>${g.AgeMonth}</td><td>${g.Weight}</td><td>${g.Height}</td><td>${g.Recorder}</td></tr>`;
+            });
+        }
+
+        // Show AI Summary if exists
+        if(profile.aiSummary && profile.aiSummary.length > 0) {
+             const latest = profile.aiSummary[profile.aiSummary.length - 1];
+             document.getElementById('ai-summary-result').innerHTML = `<strong>สรุปเมื่อ:</strong> ${new Date(latest.GeneratedDate).toLocaleString()}<br><br>${latest.ClinicalSummary}`;
+        } else {
+             document.getElementById('ai-summary-result').innerHTML = "ยังไม่มีบทสรุป AI";
+        }
+
+        switchView('child-profile');
+    }
+
+    // ==========================================
+    // 4. AI FEATURES
+    // ==========================================
+    async function generateSummary() {
+        if(!appState.currentChildId) return;
+        
+        Swal.fire({
+            title: 'กำลังสร้างบทสรุป AI...',
+            text: 'กรุณารอสักครู่ ระบบกำลังใช้ข้อมูลคลินิกและประวัติเพื่อวิเคราะห์ (ระบบจะ Mask ข้อมูลระบุตัวตน)',
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
+
+        try {
+            const res = await apiRequest('generateAISummary', { childId: appState.currentChildId });
+            Swal.close();
+            if(res && res.success) {
+                document.getElementById('ai-summary-result').innerText = res.answer;
+                // Focus on Summary Tab
+                document.querySelector('[data-tab="summary"]').click();
+            } else {
+                Swal.fire('Warning', 'AI วิเคราะห์ไม่สำเร็จ ' + (res.error||''), 'warning');
+            }
+        } catch(e) {}
+    }
+
+    // Chatbot UI Control
+    function openAIChat() {
+        if(!appState.currentChildId) {
+            Swal.fire('Notice', 'กรุณาเลือกเด็กก่อนใช้งาน AI Chatbot', 'info');
+            return;
+        }
+        document.getElementById('chatbot-container').style.display = 'flex';
+        document.getElementById('chat-body').innerHTML = '<div class="msg msg-ai">สวัสดีค่ะ มีคำถามอะไรเกี่ยวกับสุขภาพเด็กคนนี้สอบถามได้เลยค่ะ ข้อมูลวิเคราะห์จากฐานข้อมูลเท่านั้น</div>';
+    }
+
+    async function sendChatMessage() {
+        const input = document.getElementById('chat-input-text');
+        const text = input.value.trim();
+        if(!text) return;
+
+        const body = document.getElementById('chat-body');
+        body.innerHTML += `<div class="msg msg-user">${text}</div>`;
+        input.value = '';
+        body.scrollTop = body.scrollHeight;
+        
+        // Typing indicator
+        const typingId = 'typing-' + Date.now();
+        body.innerHTML += `<div id="${typingId}" class="msg msg-ai text-muted"><i class="fa-solid fa-ellipsis"></i> กำลังวิเคราะห์...</div>`;
+        body.scrollTop = body.scrollHeight;
+
+        try {
+            const res = await apiRequest('askAI', { childId: appState.currentChildId, question: text });
+            document.getElementById(typingId).remove();
+            
+            if(res.success) {
+                body.innerHTML += `<div class="msg msg-ai">${res.answer.replace(/\n/g, '<br>')}</div>`;
+            } else {
+                body.innerHTML += `<div class="msg msg-ai text-danger">เกิดข้อผิดพลาด: ${res.error}</div>`;
+            }
+        } catch(e) {
+            document.getElementById(typingId).remove();
+            body.innerHTML += `<div class="msg msg-ai text-danger">ไม่สามารถเชื่อมต่อ AI ได้</div>`;
+        }
+        body.scrollTop = body.scrollHeight;
+    }
+
+    // ==========================================
+    // 5. ADMIN / SETUP ACTIONS
+    // ==========================================
+    async function callApiAction(action) {
+        Swal.fire({
+            title: `กำลังรัน ${action}...`, allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
+        try {
+            const res = await apiRequest(action);
+            Swal.fire('สำเร็จ', JSON.stringify(res), 'success');
+        } catch(e) {
+            // Error handling done in wrapper
+        }
+    }
+
+    // Init
+    window.onload = () => {
+        switchView('dashboard');
+    };
+
+</script>
+</body>
+</html>
